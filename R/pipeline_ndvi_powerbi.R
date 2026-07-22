@@ -925,16 +925,17 @@ datos_filtro_union$ID2 <- ifelse(datos_filtro_union$ID2 == "MCARI_MAGDALENA", "M
 datos_filtro_union$ID2 <- ifelse(datos_filtro_union$ID2 == "EVI_MAGDALENA", "EVI MAGDALENA", datos_filtro_union$ID2)
 datos_filtro_union$ID2 <- ifelse(datos_filtro_union$ID2 == "SAVI_MAGDALENA", "SAVI MAGDALENA", datos_filtro_union$ID2)
 
-# --- Marcar fincas sin ninguna temporada historica cerrada (ruido en la curva BX) ---
-# Una finca "SIN_HISTORICO" nunca aparece con FUENTE == "historico" en resultado_calendario:
-# no tiene zafras cerradas previas contra las cuales comparar, asi que su comparativa NDVI
-# (promedio contra temporadas anteriores) no es representativa todavia.
-fincas_con_historico <- resultado_calendario %>%
-  filter(FUENTE == "historico") %>%
-  distinct(COD_FINCA) %>%
-  pull(COD_FINCA)
+# --- Marcar fincas nuevas / sin historico (ruido en la curva BX) ---
+# Lista fija segun data/fincas_nuevas.csv (columna ES_NUEVA, definida a mano por
+# el ingenio en "Comparacion de Codigos Casa Elvira.xlsx"), no un calculo derivado:
+# esas fincas no tienen zafras cerradas previas contra las cuales comparar, asi que
+# su comparativa NDVI (promedio contra temporadas anteriores) no es representativa todavia.
+fincas_nuevas <- read_csv("data/fincas_nuevas.csv", show_col_types = FALSE) %>%
+  mutate(COD_FINCA = as.double(COD_FINCA))
 
-datos_filtro_union$SIN_HISTORICO <- !(datos_filtro_union$COD_FINCA %in% fincas_con_historico)
+fincas_sin_historico <- fincas_nuevas %>% filter(ES_NUEVA) %>% pull(COD_FINCA)
+
+datos_filtro_union$SIN_HISTORICO <- datos_filtro_union$COD_FINCA %in% fincas_sin_historico
 datos_filtro_union$COD_FINCA <- NULL   # se quita del CSV: Power BI ya la deriva de ID (split), evita choque de nombres
 
 write.csv(datos_filtro_union, "//CSCTFLDT/Investigacion/NDVI_CORREGIDO/DATOS_SEGUIMIENTO_CULTIVO/DATOS_BX_NDVI.csv",
