@@ -13,7 +13,7 @@ crosswalk_fincas <- cargar_crosswalk_fincas("data/crosswalk_fincas.csv")
 # -----------------------------------------------------------------------
 
 driver <- RJDBC::JDBC(driverClass = "oracle.jdbc.OracleDriver","C:/driver/ojdbc7.jar")
-conexion <- dbConnect(driver, "jdbc:oracle:thin:@10.40.1.189:1521/IMSA","hpaiz","Agosto2026")
+conexion <- dbConnect(driver, "jdbc:oracle:thin:@IMSAPST:1521/IMSAPSTIA","USR_INVES","sfDezcRHhC")
 lotes_activos <- dbGetQuery(conexion,"select c_finca from sdeusr.lotes_imsa_gis")
 colnames(lotes_activos) <- c("COD_FINCA")
 lotes_activos$COD_FINCA <- as.double(lotes_activos$COD_FINCA)
