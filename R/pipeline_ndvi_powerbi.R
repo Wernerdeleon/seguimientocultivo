@@ -848,7 +848,7 @@ datos_filtro <- inner_join(datos_filtro, datosf, by = "COD_FINCA" )
 colnames(datos_filtro)[1] <- "ANO_ZAFRA"
 colnames(datos_filtro)[5] <- "VARIEDAD"
 datos_filtro$ID2 <- datos_filtro$variable
-datos_filtro_magdalena_a <- datos_filtro[,c("ANO_ZAFRA", "MES_COSECHA_AC", "EDAD_MES", "ID", "COD_FINCA", "REGION", "FINCA", "VARIEDAD", "NDVI", "AREA", "ID2")]
+datos_filtro_magdalena_a <- datos_filtro[,c("ANO_ZAFRA", "MES_COSECHA_AC", "EDAD_MES", "ID", "REGION", "FINCA", "VARIEDAD", "NDVI", "AREA", "ID2")]
 
 
 #####################################################################################################
@@ -901,7 +901,7 @@ datos_filtro <- inner_join(datos_filtro, datosf, by = "COD_FINCA" )
 colnames(datos_filtro)[1] <- "ANO_ZAFRA"
 colnames(datos_filtro)[5] <- "VARIEDAD"
 datos_filtro$ID2 <- datos_filtro$variable
-datos_filtro_magdalena_b <- datos_filtro[,c("ANO_ZAFRA", "MES_COSECHA_AC", "EDAD_MES", "ID", "COD_FINCA", "REGION", "FINCA", "VARIEDAD", "NDVI", "AREA", "ID2")]
+datos_filtro_magdalena_b <- datos_filtro[,c("ANO_ZAFRA", "MES_COSECHA_AC", "EDAD_MES", "ID", "REGION", "FINCA", "VARIEDAD", "NDVI", "AREA", "ID2")]
 
 
 datos_filtro_magdalena_a$ANALISIS <- "2025/2026"
@@ -924,17 +924,6 @@ datos_filtro_union$ID2 <- ifelse(datos_filtro_union$ID2 == "NDWI_MAGDALENA", "ND
 datos_filtro_union$ID2 <- ifelse(datos_filtro_union$ID2 == "MCARI_MAGDALENA", "MCARI MAGDALENA", datos_filtro_union$ID2)
 datos_filtro_union$ID2 <- ifelse(datos_filtro_union$ID2 == "EVI_MAGDALENA", "EVI MAGDALENA", datos_filtro_union$ID2)
 datos_filtro_union$ID2 <- ifelse(datos_filtro_union$ID2 == "SAVI_MAGDALENA", "SAVI MAGDALENA", datos_filtro_union$ID2)
-
-# --- Marcar fincas sin ninguna temporada historica cerrada (ruido en la curva BX) ---
-# Una finca "SIN_HISTORICO" nunca aparece con FUENTE == "historico" en resultado_calendario:
-# no tiene zafras cerradas previas contra las cuales comparar, asi que su comparativa NDVI
-# (promedio contra temporadas anteriores) no es representativa todavia.
-fincas_con_historico <- resultado_calendario %>%
-  filter(FUENTE == "historico") %>%
-  distinct(COD_FINCA) %>%
-  pull(COD_FINCA)
-
-datos_filtro_union$SIN_HISTORICO <- !(datos_filtro_union$COD_FINCA %in% fincas_con_historico)
 
 write.csv(datos_filtro_union, "//CSCTFLDT/Investigacion/NDVI_CORREGIDO/DATOS_SEGUIMIENTO_CULTIVO/DATOS_BX_NDVI.csv",
           row.names = FALSE, na = "")
