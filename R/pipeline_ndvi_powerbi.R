@@ -935,6 +935,7 @@ fincas_con_historico <- resultado_calendario %>%
   pull(COD_FINCA)
 
 datos_filtro_union$SIN_HISTORICO <- !(datos_filtro_union$COD_FINCA %in% fincas_con_historico)
+datos_filtro_union$COD_FINCA <- NULL   # se quita del CSV: Power BI ya la deriva de ID (split), evita choque de nombres
 
 write.csv(datos_filtro_union, "//CSCTFLDT/Investigacion/NDVI_CORREGIDO/DATOS_SEGUIMIENTO_CULTIVO/DATOS_BX_NDVI.csv",
           row.names = FALSE, na = "")
