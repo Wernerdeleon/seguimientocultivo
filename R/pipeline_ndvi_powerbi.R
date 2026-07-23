@@ -124,6 +124,55 @@ filtrar_mes_curso <- function(comp_grouped, meses_transcurridos, temporada_objet
 }
 
 # --------------------------------------------------------------------
+# Helpers de performance: version vectorizada de 3 patrones que en el
+# script original eran for(...) { subset(); rbind() } por cada valor unico
+# de un grupo (EDAD_MES, ID o ID2). Con miles de lotes/imagenes ese patron
+# es O(n^2) (cada vuelta escanea el data.frame completo). Aca se resuelve
+# con group_by()/mutate()/filter(), que hace un solo paso agrupado.
+# Logica y resultados verificados como identicos al loop original
+# (mismos valores; el orden de filas puede diferir, ver notas de export).
+# --------------------------------------------------------------------
+
+# Reemplaza el loop de filtro IQR (outliers -> NA) agrupado por EDAD_MES.
+clip_outliers_iqr <- function(x, mult = 2) {
+  q1  <- quantile(x, 0.25, na.rm = TRUE)
+  q3  <- quantile(x, 0.75, na.rm = TRUE)
+  iqr <- q3 - q1
+  ifelse(x > q1 - iqr * mult & x < q3 + iqr * mult, x, NA)
+}
+
+# Reemplaza el loop que construye comparativa1: para cada ID conserva las
+# filas de `datos` con EDAD_IMAGEN menor al maximo EDAD_IMAGEN de la
+# temporada objetivo (+4). Los ID sin filas en la temporada objetivo se
+# descartan por completo (equivalente al `next` del loop original).
+construir_ventana_comparativa <- function(datos, temporada_objetivo) {
+  datos %>%
+    group_by(ID) %>%
+    filter(any(TEMPORADA == temporada_objetivo)) %>%
+    mutate(.umbral_edad = max(EDAD_IMAGEN[TEMPORADA == temporada_objetivo]) + 4) %>%
+    filter(EDAD_IMAGEN < .umbral_edad) %>%
+    ungroup() %>%
+    select(-.umbral_edad)
+}
+
+# Reemplaza el loop de filtro IQR por fila (excluye filas, no las marca NA),
+# agrupado por ID2.
+filtrar_outliers_iqr_por_grupo <- function(df, grupo, valor, mult) {
+  df %>%
+    group_by({{ grupo }}) %>%
+    mutate(
+      .q1  = quantile({{ valor }}, 0.25, na.rm = TRUE),
+      .q3  = quantile({{ valor }}, 0.75, na.rm = TRUE),
+      .iqr = .q3 - .q1,
+      .ls  = .q3 + .iqr * mult,
+      .li  = .q1 - .iqr * mult
+    ) %>%
+    filter({{ valor }} >= .li & {{ valor }} <= .ls) %>%
+    select(-.q1, -.q3, -.iqr, -.ls, -.li) %>%
+    ungroup()
+}
+
+# --------------------------------------------------------------------
 # 0) Parámetros de negocio
 # --------------------------------------------------------------------
 MAX_DAYS_AFTER_CUT_FOR_RESET <- 90    # siembra <= 90 días post-corte reinicia INICIO
@@ -702,26 +751,14 @@ indices$EDAD_MES <- floor(as.numeric(indices$EDAD_IMAGEN)/10)+1
 indices <- subset(indices, !is.na(ZAFRA) & EDAD_IMAGEN>0 & NDVI > 0)
 indices <- subset(indices, EDAD_IMAGEN < 400)
 
-etapas <- unique(indices$EDAD_MES)
-indices_filtrados <- NULL
-for (i in 1:length(etapas)){
-  i_temp <-  subset(indices, EDAD_MES == etapas[i])
-  i_temp$NDVI <- ifelse(i_temp$NDVI>quantile(i_temp$NDVI, 0.25, na.rm = T)-((quantile(i_temp$NDVI, 0.75, na.rm = T)-quantile(i_temp$NDVI, 0.25, na.rm = T))*2) &
-                          i_temp$NDVI<quantile(i_temp$NDVI, 0.75, na.rm = T)+((quantile(i_temp$NDVI, 0.75, na.rm = T)-quantile(i_temp$NDVI, 0.25, na.rm = T))*2),  i_temp$NDVI, NA)
-  i_temp$NDWI <- ifelse(i_temp$NDWI>quantile(i_temp$NDWI, 0.25, na.rm = T)-((quantile(i_temp$NDWI, 0.75, na.rm = T)-quantile(i_temp$NDWI, 0.25, na.rm = T))*2) &
-                          i_temp$NDWI<quantile(i_temp$NDWI, 0.75, na.rm = T)+((quantile(i_temp$NDWI, 0.75, na.rm = T)-quantile(i_temp$NDWI, 0.25, na.rm = T))*2),  i_temp$NDWI, NA)
-  i_temp$SAVI <- ifelse(i_temp$SAVI>quantile(i_temp$SAVI, 0.25, na.rm = T)-((quantile(i_temp$SAVI, 0.75, na.rm = T)-quantile(i_temp$SAVI, 0.25, na.rm = T))*2) &
-                          i_temp$SAVI<quantile(i_temp$SAVI, 0.75, na.rm = T)+((quantile(i_temp$SAVI, 0.75, na.rm = T)-quantile(i_temp$SAVI, 0.25, na.rm = T))*2),  i_temp$SAVI, NA)
-  i_temp$EVI <- ifelse(i_temp$EVI>quantile(i_temp$EVI, 0.25, na.rm = T)-((quantile(i_temp$EVI, 0.75, na.rm = T)-quantile(i_temp$EVI, 0.25, na.rm = T))*2) &
-                         i_temp$EVI<quantile(i_temp$EVI, 0.75, na.rm = T)+((quantile(i_temp$EVI, 0.75, na.rm = T)-quantile(i_temp$EVI, 0.25, na.rm = T))*2),  i_temp$EVI, NA)
-  i_temp$MCARI <- ifelse(i_temp$MCARI>quantile(i_temp$MCARI, 0.25, na.rm = T)-((quantile(i_temp$MCARI, 0.75, na.rm = T)-quantile(i_temp$MCARI, 0.25, na.rm = T))*2) &
-                           i_temp$MCARI<quantile(i_temp$MCARI, 0.75, na.rm = T)+((quantile(i_temp$MCARI, 0.75, na.rm = T)-quantile(i_temp$MCARI, 0.25, na.rm = T))*2),  i_temp$MCARI, NA)
-  i_temp$MM <- ifelse(i_temp$MM>quantile(i_temp$MM, 0.25, na.rm = T)-((quantile(i_temp$MM, 0.75, na.rm = T)-quantile(i_temp$MM, 0.25, na.rm = T))*2) &
-                        i_temp$MM<quantile(i_temp$MM, 0.75, na.rm = T)+((quantile(i_temp$MM, 0.75, na.rm = T)-quantile(i_temp$MM, 0.25, na.rm = T))*2),  i_temp$MM, NA)
-  i_temp$IBR <- ifelse(i_temp$IBR>quantile(i_temp$IBR, 0.25, na.rm = T)-((quantile(i_temp$IBR, 0.75, na.rm = T)-quantile(i_temp$IBR, 0.25, na.rm = T))*2) &
-                         i_temp$IBR<quantile(i_temp$IBR, 0.75, na.rm = T)+((quantile(i_temp$IBR, 0.75, na.rm = T)-quantile(i_temp$IBR, 0.25, na.rm = T))*2),  i_temp$IBR, NA)
-  indices_filtrados <- rbind(indices_filtrados, i_temp)
-}
+# Filtro IQR (outliers -> NA) por bin de EDAD_MES. Antes: for con
+# subset()+rbind() por cada EDAD_MES unico (ver clip_outliers_iqr arriba).
+# Misma logica, vectorizada por grupo.
+indices_filtrados <- indices %>%
+  group_by(EDAD_MES) %>%
+  mutate(across(c(NDVI, NDWI, SAVI, EVI, MCARI, MM, IBR), ~clip_outliers_iqr(.x, mult = 2))) %>%
+  ungroup() %>%
+  as.data.frame()
 
 colnames(indices_filtrados)[1] <- "TEMPORADA"
 indices_filtrados$MM <- ifelse(indices_filtrados$EDAD_IMAGEN < 180, NA, indices_filtrados$MM)
@@ -794,16 +831,10 @@ datos_magdalena <- datos
 #TEMPORADA 2025/2026
 
 datos <- subset(datos_magdalena, TEMPORADA %in% c("2023/2024", "2024/2025", "2025/2026"))
-contador <- unique(datos$ID)
-comparativa1 <- NULL
-for (i in 1:length(contador)){
-  dtemp1 <- subset(datos, TEMPORADA == "2025/2026" & ID == contador[i])
-  if (nrow(dtemp1) == 0) next          # FIX #2: sin datos en la temporada objetivo -> saltar (evita max()=-Inf)
-  edad_f1 <- max(dtemp1$EDAD_IMAGEN) + 4
-  dtemp2 <- subset(datos, ID == contador[i])
-  dtemp2 <- subset(dtemp2, EDAD_IMAGEN < edad_f1)
-  comparativa1 <- rbind(dtemp2, comparativa1)
-}
+# Ventana comparativa por lote. Antes: for con subset()+rbind() por cada ID
+# (ver construir_ventana_comparativa arriba). Misma logica: los ID sin
+# filas en la temporada objetivo se descartan (FIX #2 preservado).
+comparativa1 <- construir_ventana_comparativa(datos, "2025/2026")
 
 comp1 <- comparativa1 %>%
   aplicar_cutoff_dinamico(meses_zafra_anterior) %>%          # <-- cutoff dinámico (reemplaza los 6 subset() manuales)
@@ -823,17 +854,11 @@ comp1 <- comparativa1 %>%
 
 comp1 <- melt(comp1, id.vars = c("TEMPORADA", "MES_COSECHA_AC", "EDAD_MES", "ID", "VARIEDAD_AC", "COD_FINCA", "AREA"))
 comp1$ID2 <- paste0(comp1$TEMPORADA, "_", comp1$MES_COSECHA_AC, "_", comp1$EDAD_MES , "_", comp1$variable)
-contador <- unique(comp1$ID2)
 colnames(comp1)[9] <- "NDVI"
 
-datos_filtro <-  NULL
-for (i in 1:length(contador)){
-  data_temp <- subset(comp1, ID2 == contador[i])
-  LS <- quantile(data_temp$NDVI, 0.75, na.rm = T) + (quantile(data_temp$NDVI, 0.75, na.rm = T)-quantile(data_temp$NDVI, 0.25, na.rm = T))*3
-  LI <- quantile(data_temp$NDVI, 0.25, na.rm = T) - (quantile(data_temp$NDVI, 0.75, na.rm = T)-quantile(data_temp$NDVI, 0.25, na.rm = T))*3
-  data_temp <- subset(data_temp, NDVI >= LI & NDVI <= LS)
-  datos_filtro <- rbind(datos_filtro, data_temp)
-}
+# Filtro IQR por ID2. Antes: for con subset()+rbind() por cada ID2 unico
+# (ver filtrar_outliers_iqr_por_grupo arriba). Misma logica, vectorizada.
+datos_filtro <- filtrar_outliers_iqr_por_grupo(comp1, ID2, NDVI, mult = 3)
 
 driver <- RJDBC::JDBC(driverClass = "oracle.jdbc.OracleDriver","C:/driver/ojdbc7.jar")
 conexion <- dbConnect(driver, "jdbc:oracle:thin:@IMSAPST:1521/IMSAPSTIA","USR_INVES","sfDezcRHhC")
@@ -855,16 +880,8 @@ datos_filtro_magdalena_a <- datos_filtro[,c("ANO_ZAFRA", "MES_COSECHA_AC", "EDAD
 #TEMPORADA 2026/2027
 
 datos <- subset(datos_magdalena, TEMPORADA %in% c("2023/2024", "2024/2025", "2025/2026","2026/2027"))
-contador <- unique(datos$ID)
-comparativa1 <- NULL
-for (i in 1:length(contador)){
-  dtemp1 <- subset(datos, TEMPORADA == "2026/2027" & ID == contador[i])
-  if (nrow(dtemp1) == 0) next          # FIX #2: sin datos en la temporada objetivo -> saltar (evita max()=-Inf)
-  edad_f1 <- max(dtemp1$EDAD_IMAGEN) + 4
-  dtemp2 <- subset(datos, ID == contador[i])
-  dtemp2 <- subset(dtemp2, EDAD_IMAGEN < edad_f1)
-  comparativa1 <- rbind(dtemp2, comparativa1)
-}
+# Ventana comparativa por lote (ver nota equivalente arriba, bloque 2025/2026).
+comparativa1 <- construir_ventana_comparativa(datos, "2026/2027")
 
 comp1 <- comparativa1 %>%
   aplicar_cutoff_dinamico(meses_zafra_actual) %>%           # <-- cutoff dinámico (reemplaza los 6 subset() manuales)
@@ -884,17 +901,10 @@ comp1 <- comparativa1 %>%
 
 comp1 <- melt(comp1, id.vars = c("TEMPORADA", "MES_COSECHA_AC", "EDAD_MES", "ID", "VARIEDAD_AC", "COD_FINCA", "AREA"))
 comp1$ID2 <- paste0(comp1$TEMPORADA, "_", comp1$MES_COSECHA_AC, "_", comp1$EDAD_MES , "_", comp1$variable)
-contador <- unique(comp1$ID2)
 colnames(comp1)[9] <- "NDVI"
 
-datos_filtro <-  NULL
-for (i in 1:length(contador)){
-  data_temp <- subset(comp1, ID2 == contador[i])
-  LS <- quantile(data_temp$NDVI, 0.75, na.rm = T) + (quantile(data_temp$NDVI, 0.75, na.rm = T)-quantile(data_temp$NDVI, 0.25, na.rm = T))*2
-  LI <- quantile(data_temp$NDVI, 0.25, na.rm = T) - (quantile(data_temp$NDVI, 0.75, na.rm = T)-quantile(data_temp$NDVI, 0.25, na.rm = T))*2
-  data_temp <- subset(data_temp, NDVI >= LI & NDVI <= LS)
-  datos_filtro <- rbind(datos_filtro, data_temp)
-}
+# Filtro IQR por ID2 (ver nota equivalente arriba, bloque 2025/2026).
+datos_filtro <- filtrar_outliers_iqr_por_grupo(comp1, ID2, NDVI, mult = 2)
 
 
 datos_filtro <- inner_join(datos_filtro, datosf, by = "COD_FINCA" )
