@@ -20,10 +20,10 @@ lotes_activos$COD_FINCA <- as.double(lotes_activos$COD_FINCA)
 lotes_activos <- normalizar_finca(lotes_activos, crosswalk_fincas, solo_finca = TRUE)   # <- fix
 lotes_activos <- distinct(lotes_activos)
 
-mlote <- dbGetQuery(conexion,"select * from agricola.m_lote")
+mlote <- dbGetQuery(conexion,"select COD_FINCA, COD_SECTOR, COD_LOTE, FECHA_ULTIMO_CORTE, FECHA_FINALIZO_CORTE, FECHA_SIEMBRA, ACTIVO, LOTE_SEMILLERO, AREA, AREA_CULTIVO, AREA_CORTADA, COD_VARIEDAD from agricola.m_lote")
 mlote <- normalizar_finca(mlote, crosswalk_fincas)                                       # <- fix
 mlote <- left_join(lotes_activos, mlote, by = c("COD_FINCA"))
-mlote_historico <- dbGetQuery(conexion,"select * from HISTORICOS.historico_lote")
+mlote_historico <- dbGetQuery(conexion,"select ANO_ZAFRA, COD_FINCA, COD_SECTOR, COD_LOTE, FECHA_SIEMBRA, FECHA_ULTIMO_CORTE, FECHA_FINALIZO_CORTE, LOTE_SEMILLERO, AREA, AREA_CULTIVO, AREA_CORTADA, COD_VARIEDAD from HISTORICOS.historico_lote")
 mlote_historico <- normalizar_finca(mlote_historico, crosswalk_fincas)                   # <- fix
 mlote_historico <- left_join(lotes_activos, mlote_historico, by = c("COD_FINCA"))
 
@@ -718,6 +718,13 @@ if(require(RJDBC)==FALSE){install.packages("RJDBC",dependencies = TRUE)}
 library(dplyr)
 driver <- RJDBC::JDBC(driverClass = "oracle.jdbc.OracleDriver","C:/driver/ojdbc7.jar")
 conexion <- dbConnect(driver, "jdbc:oracle:thin:@IMSAPST:1521/IMSAPSTIA","USR_INVES","sfDezcRHhC")
+# NOTA: esta query se deja con SELECT * a proposito (no aplica la misma
+# optimizacion que las otras 3). El `indices[,1:16]` de mas abajo asume
+# EXACTAMENTE el orden de columnas fisico que devuelve la vista; convertir
+# esto a columnas explicitas sin conocer ese orden podria reordenar/perder
+# columnas y romper el pipeline en silencio (sin error, con datos mal
+# etiquetados). Requiere confirmar antes el orden real de columnas de
+# SDEUSR.VW_INDICE_VEGETACION.
 query <- "SELECT * FROM SDEUSR.VW_INDICE_VEGETACION WHERE FECHA_IMAGEN >= TO_DATE('2018-11-01', 'YYYY-MM-DD')"
 indices <- dbGetQuery(conexion, query)
 indices <- normalizar_finca(indices, crosswalk_fincas)                                   # <- fix
@@ -767,7 +774,7 @@ if(require(RJDBC)==FALSE){install.packages("RJDBC",dependencies = TRUE)}
 driver <- RJDBC::JDBC(driverClass = "oracle.jdbc.OracleDriver","C:/driver/ojdbc7.jar")
 
 conexion <- dbConnect(driver, "jdbc:oracle:thin:@IMSAPST:1521/IMSAPSTIA","USR_INVES","sfDezcRHhC")
-query <- "SELECT * FROM SDEUSR.VW_ANALISIS_SACAROSA  WHERE ANO_ZAFRA IN ('2023/2024', '2024/2025', '2025/2026')"
+query <- "SELECT ANO_ZAFRA, COD_FINCA, COD_SECTOR, COD_LOTE, LOTE, TAH, FECHA_CORTE, VARIEDAD, AREA, COD_VARIEDAD FROM SDEUSR.VW_ANALISIS_SACAROSA WHERE ANO_ZAFRA IN ('2023/2024', '2024/2025', '2025/2026')"
 data_prod <- dbGetQuery(conexion, query)
 data_prod <- normalizar_finca(data_prod, crosswalk_fincas)                               # <- fix
 data_prod$TAH <- data_prod$TAH/1000
