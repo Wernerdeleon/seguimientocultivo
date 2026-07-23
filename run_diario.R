@@ -7,6 +7,8 @@
 # Orden fijo: clima.R primero, pipeline_ndvi_powerbi.R despues. Si
 # clima.R falla, NO se corre el pipeline (evita generar salidas con
 # datos de clima desactualizados o con MAESTRO.csv sin refrescar).
+# Entre los dos pasos se limpia el ambiente (equivalente al
+# rm(list=ls()); gc() que se usaba corriendo los scripts a mano).
 #
 # Cada corrida deja:
 #  - logs/run_<timestamp>.log      : salida completa de ambos scripts
@@ -57,6 +59,11 @@ correr_paso <- function(nombre, ruta_script) {
   resultado
 }
 
+# Nombres propios del orquestador: se preservan cuando se limpia el
+# ambiente entre pasos (ver mas abajo) para no romper el logging ni el
+# control de estado.
+objetos_propios <- c(ls(), "objetos_propios")
+
 r_clima <- correr_paso("clima.R", "R/clima.R")
 
 if (!r_clima$ok) {
@@ -65,6 +72,14 @@ if (!r_clima$ok) {
   escribir_estado("FALLO", paste("clima.R:", r_clima$msg))
   quit(status = 1, save = "no")
 }
+
+# Limpieza de memoria entre pasos (equivalente a rm(list=ls()); gc() que se
+# usaba al correr los scripts a mano uno por uno): libera todo lo que dejo
+# clima.R en el ambiente antes de arrancar el pipeline, preservando solo
+# las variables/funciones propias del orquestador.
+log_linea("Limpiando memoria entre clima.R y pipeline_ndvi_powerbi.R")
+rm(list = setdiff(ls(), objetos_propios))
+gc()
 
 r_pipeline <- correr_paso("pipeline_ndvi_powerbi.R", "R/pipeline_ndvi_powerbi.R")
 
